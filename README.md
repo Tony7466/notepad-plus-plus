@@ -9,6 +9,11 @@ editor and Notepad replacement that supports several programming languages and
 natural languages. Running in the MS Windows environment, its use is governed by
 [GPL License](LICENSE).
 
+Based on the powerful editing component [Scintilla](https://www.scintilla.org/), Notepad++ is written in C++ and uses pure Win32 API and STL which ensures a higher execution speed and smaller program size. By optimizing as many routines as possible without losing user friendliness, Notepad++ is trying to reduce the world carbon dioxide emissions. When using less CPU power, the PC can throttle down and reduce power consumption, resulting in a greener environment.
+
+![image](https://github.com/Tony7466/notepad-plus-plus/blob/master/scintilla/src/IMG_2781.webp)
+
+
 See the [Notepad++ official site](https://notepad-plus-plus.org/) for more information.
 
 Notepad++ Release Key
