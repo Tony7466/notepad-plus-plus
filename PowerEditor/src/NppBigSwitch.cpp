@@ -2276,11 +2276,19 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 			//reset styler for change in Stylers.xml
 			_mainEditView.defineDocType(_mainEditView.getCurrentBuffer()->getLangType());
 			_mainEditView.performGlobalStyles();
-			addHotSpot(& _mainEditView);
 
 			_subEditView.defineDocType(_subEditView.getCurrentBuffer()->getLangType());
 			_subEditView.performGlobalStyles();
-			addHotSpot(& _subEditView);
+
+			int urlAction = nppParam.getNppGUI()._styleURL;
+			if (urlAction != urlDisable)
+			{
+				if (_mainEditView.getCurrentBuffer()->allowClickableLink())
+					addHotSpot(&_mainEditView);
+
+				if (_subEditView.getCurrentBuffer()->allowClickableLink())
+					addHotSpot(&_subEditView);
+			}
 
 			_findReplaceDlg.updateFinderScintilla();
 			
@@ -3132,7 +3140,6 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 
 		case NPPM_SETUNTITLEDNAME:
 		{
-			if (!wParam || !lParam) return FALSE;
 			return fileRenameUntitledPluginAPI(reinterpret_cast<BufferID>(wParam), reinterpret_cast<const wchar_t*>(lParam));
 		}
 
@@ -3691,15 +3698,30 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 
 		case NPPM_INTERNAL_UPDATECLICKABLELINKS:
 		{
-			ScintillaEditView* pView = reinterpret_cast<ScintillaEditView*>(wParam);
-			if (pView == NULL)
+			if (wParam == 1)
 			{
-				addHotSpot(_pEditView);
-				addHotSpot(_pNonEditView);
+				removeAllHotSpot();
+				return TRUE;
 			}
-			else
+
+			ScintillaEditView* pView = reinterpret_cast<ScintillaEditView*>(wParam);
+
+			int urlAction = nppParam.getNppGUI()._styleURL;
+			if (urlAction != urlDisable)
 			{
-				addHotSpot(pView);
+				if (pView == NULL)
+				{
+					if (_pEditView->getCurrentBuffer()->allowClickableLink())
+						addHotSpot(_pEditView);
+
+					if (_pNonEditView->getCurrentBuffer()->allowClickableLink())
+						addHotSpot(_pNonEditView);
+				}
+				else
+				{
+					if (pView->getCurrentBuffer()->allowClickableLink())
+						addHotSpot(pView);
+				}
 			}
 			return TRUE;
 		}
@@ -3734,8 +3756,16 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 
 		case NPPM_INTERNAL_DOCMODIFIEDBYREPLACEALL:
 		{
-			if (wParam == reinterpret_cast<WPARAM>(_pEditView->getCurrentBuffer()))
-				addHotSpot(_pEditView);
+			Buffer* currentBuf = _pEditView->getCurrentBuffer();
+			if (wParam == reinterpret_cast<WPARAM>(currentBuf))
+			{
+				int urlAction = nppParam.getNppGUI()._styleURL;
+				if (urlAction != urlDisable && currentBuf->allowClickableLink())
+				{
+					addHotSpot(_pEditView);
+				}
+			}
+
 			SCNotification scnN{};
 			scnN.nmhdr.code = NPPN_GLOBALMODIFIED;
 			scnN.nmhdr.hwndFrom = reinterpret_cast<void*>(wParam);
@@ -4055,6 +4085,43 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 			::SendMessage(_pPublicInterface->getHSelf(), WM_SIZE, 0, 0);
 			_mainDocTab.refresh();
 			_subDocTab.refresh();
+			return TRUE;
+		}
+
+		case NPPM_INTERNAL_DRAWINACTIVETABBARBUTTON:
+		{
+			::SendMessage(_mainDocTab.getHSelf(), NPPM_INTERNAL_REFRESHDARKMODE, 0, 0);
+			::SendMessage(_subDocTab.getHSelf(), NPPM_INTERNAL_REFRESHDARKMODE, 0, 0);
+
+			::SendMessage(_pPublicInterface->getHSelf(), WM_SIZE, 0, 0);
+			_mainDocTab.refresh();
+			_subDocTab.refresh();
+
+			return TRUE;
+		}
+
+		case NPPM_INTERNAL_HIDEMENURIGHTSHORTCUTS:
+		{
+			if (nppParam.getNppGUI()._hideMenuRightShortcuts)
+			{
+				int nbRemoved = 0;
+				const int bufferSize = 64;
+				wchar_t buffer[bufferSize];
+				int nbItem = GetMenuItemCount(_mainMenuHandle);
+				for (int i = nbItem - 1; i >= 0; --i)
+				{
+					::GetMenuStringW(_mainMenuHandle, i, buffer, bufferSize, MF_BYPOSITION);
+					if (lstrcmp(buffer, L"✕") == 0 || lstrcmp(buffer, L"▼") == 0 || lstrcmp(buffer, L"＋") == 0)
+					{
+						::RemoveMenu(_mainMenuHandle, i, MF_BYPOSITION);
+						++nbRemoved;
+					}
+					if (nbRemoved == 3)
+						break;
+				}
+				if (nbRemoved > 0)
+					::DrawMenuBar(hwnd);
+			}
 			return TRUE;
 		}
 
