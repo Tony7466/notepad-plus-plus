@@ -18,6 +18,11 @@
 #include "AboutDlg.h"
 #include "Parameters.h"
 #include "localization.h"
+#if defined __has_include
+#if __has_include ("NppLibsVersion.h")
+#include "NppLibsVersion.h"
+#endif
+#endif
 
 using namespace std;
 
@@ -63,7 +68,7 @@ intptr_t CALLBACK AboutDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM lPar
             
 			_pageLink.init(_hInst, _hSelf);
             //_pageLink.create(::GetDlgItem(_hSelf, IDC_HOME_ADDR), L"https://notepad-plus-plus.org/");
-			_pageLink.create(::GetDlgItem(_hSelf, IDC_AUTHOR_NAME), L"https://notepad-plus-plus.org/news/v878-we-are-with-ukraine/");
+			_pageLink.create(::GetDlgItem(_hSelf, IDC_AUTHOR_NAME), L"https://notepad-plus-plus.org/news/v879-we-are-with-ukraine/");
 
 			return TRUE;
 		}
@@ -196,6 +201,21 @@ intptr_t CALLBACK DebugInfoDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM 
 #elif !defined(_MSC_VER)
 			_debugInfoStr += L"Built with : (unknown)\r\n";
 #endif
+
+			// Scintilla/Lexilla version
+			_debugInfoStr += L"Scintilla/Lexilla included : ";
+			{
+				string strSciLexVer = NPP_SCINTILLA_VERSION;
+				strSciLexVer += "/";
+				strSciLexVer += NPP_LEXILLA_VERSION;
+				_debugInfoStr += wmc.char2wchar(strSciLexVer.c_str(), CP_ACP);
+			}
+			_debugInfoStr += L"\r\n";
+
+			// Boost Regex version
+			_debugInfoStr += L"Boost Regex included : ";
+			_debugInfoStr += wmc.char2wchar(NPP_BOOST_REGEX_VERSION, CP_ACP);
+			_debugInfoStr += L"\r\n";
 
 			// Binary path
 			_debugInfoStr += L"Path : ";

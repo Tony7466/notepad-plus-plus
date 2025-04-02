@@ -242,7 +242,6 @@ LRESULT Notepad_plus::init(HWND hwnd)
 	const ScintillaViewParams & svp = nppParam.getSVP();
 
 	int tabBarStatus = nppGUI._tabStatus;
-	TabBarPlus::setReduced((tabBarStatus & TAB_REDUCE) != 0, &_mainDocTab);
 
 	const int tabIconSet = NppDarkMode::getTabIconSet(NppDarkMode::isEnabled());
 	unsigned char indexDocTabIcon = 0;
@@ -392,31 +391,21 @@ LRESULT Notepad_plus::init(HWND hwnd)
 	_mainEditView.execute(SCI_STYLESETCHECKMONOSPACED, STYLE_DEFAULT, true);
 	_subEditView.execute(SCI_STYLESETCHECKMONOSPACED, STYLE_DEFAULT, true);
 
-	TabBarPlus::doDragNDrop(true);
-
-	const auto& hf = _mainDocTab.getFont(TabBarPlus::isReduced());
+	const auto& hf = _mainDocTab.getFont(nppGUI._tabStatus & TAB_REDUCE);
 	if (hf)
 	{
 		::SendMessage(_mainDocTab.getHSelf(), WM_SETFONT, reinterpret_cast<WPARAM>(hf), MAKELPARAM(TRUE, 0));
 		::SendMessage(_subDocTab.getHSelf(), WM_SETFONT, reinterpret_cast<WPARAM>(hf), MAKELPARAM(TRUE, 0));
 	}
 
-	int tabDpiDynamicalHeight = _mainDocTab.dpiManager().scale(TabBarPlus::isReduced() ? g_TabHeight : g_TabHeightLarge);
-	int tabDpiDynamicalWidth = _mainDocTab.dpiManager().scale(TabBarPlus::drawTabCloseButton() ? g_TabWidthButton : g_TabWidth);
+	int tabDpiDynamicalHeight = _mainDocTab.dpiManager().scale(nppGUI._tabStatus & TAB_REDUCE ? g_TabHeight : g_TabHeightLarge);
+	int tabDpiDynamicalWidth = _mainDocTab.dpiManager().scale(nppGUI._tabStatus & TAB_PINBUTTON ? g_TabWidthButton : g_TabWidth);
 
 	TabCtrl_SetItemSize(_mainDocTab.getHSelf(), tabDpiDynamicalWidth, tabDpiDynamicalHeight);
 	TabCtrl_SetItemSize(_subDocTab.getHSelf(), tabDpiDynamicalWidth, tabDpiDynamicalHeight);
 
 	_mainDocTab.display();
-
-
-	TabBarPlus::doDragNDrop((tabBarStatus & TAB_DRAGNDROP) != 0);
-	TabBarPlus::setDrawTopBar((tabBarStatus & TAB_DRAWTOPBAR) != 0, &_mainDocTab);
-	TabBarPlus::setDrawInactiveTab((tabBarStatus & TAB_DRAWINACTIVETAB) != 0, &_mainDocTab);
-	TabBarPlus::setDrawTabCloseButton((tabBarStatus & TAB_CLOSEBUTTON) != 0, &_mainDocTab);
-	TabBarPlus::setDrawTabPinButton((tabBarStatus & TAB_PINBUTTON) != 0, &_mainDocTab);
-	TabBarPlus::setDbClk2Close((tabBarStatus & TAB_DBCLK2CLOSE) != 0);
-	TabBarPlus::setVertical((tabBarStatus & TAB_VERTICAL) != 0);
+	TabBarPlus::triggerOwnerDrawTabbar(&(_mainDocTab.dpiManager()));
 	drawTabbarColoursFromStylerArray();
 
 	//
@@ -907,19 +896,6 @@ bool Notepad_plus::saveGUIParams()
 	nppGUI._toolbarShow = _rebarTop.getIDVisible(REBAR_BAR_TOOLBAR);
 	nppGUI._toolBarStatus = _toolBar.getState();
 
-	nppGUI._tabStatus = (TabBarPlus::doDragNDropOrNot() ? TAB_DRAWTOPBAR : 0) | \
-						(TabBarPlus::drawTopBar() ? TAB_DRAGNDROP : 0) | \
-						(TabBarPlus::drawInactiveTab() ? TAB_DRAWINACTIVETAB : 0) | \
-						(TabBarPlus::isReduced() ? TAB_REDUCE : 0) | \
-						(TabBarPlus::drawTabCloseButton() ? TAB_CLOSEBUTTON : 0) | \
-						(TabBarPlus::drawTabPinButton() ? TAB_PINBUTTON : 0) | \
-						(TabBarPlus::isDbClk2Close() ? TAB_DBCLK2CLOSE : 0) | \
-						(TabBarPlus::isVertical() ? TAB_VERTICAL : 0) | \
-						(TabBarPlus::isMultiLine() ? TAB_MULTILINE : 0) |\
-						(nppGUI._tabStatus & TAB_INACTIVETABSHOWBUTTON) | \
-						(nppGUI._tabStatus & TAB_HIDE) | \
-						(nppGUI._tabStatus & TAB_QUITONEMPTY) | \
-						(nppGUI._tabStatus & TAB_ALTICONS);
 	nppGUI._splitterPos = _subSplitter.isVertical()?POS_VERTICAL:POS_HORIZOTAL;
 	UserDefineDialog *udd = _pEditView->getUserDefineDlg();
 	bool b = udd->isDocked();
@@ -3891,7 +3867,7 @@ void Notepad_plus::setLanguage(LangType langType)
 		_subEditView.execute(SCI_SETDOCPOINTER, 0, 0);
 		_subEditView.execute(SCI_SETMODEVENTMASK, MODEVENTMASK_ON);
 
-		_mainEditView.setLanguage(langType);
+		(_mainEditView.getCurrentBuffer())->setLangType(langType);
 
 		_subEditView.execute(SCI_SETMODEVENTMASK, MODEVENTMASK_OFF);
 		_subEditView.execute(SCI_SETDOCPOINTER, 0, subPrev);
@@ -3902,7 +3878,7 @@ void Notepad_plus::setLanguage(LangType langType)
 	}
 	else
 	{
-		_pEditView->setLanguage(langType);
+		(_pEditView->getCurrentBuffer())->setLangType(langType);
 	}
 }
 
@@ -4674,10 +4650,6 @@ void Notepad_plus::loadBufferIntoView(BufferID id, int whichOne, bool dontClose)
 		if (buf->isDirty() || !buf->isUntitled())
 		{
 			idToClose = BUFFER_INVALID;
-		}
-		else
-		{
-			buf->setLastLangType(-1); // When replacing the "new" tab with an opened file, the last used language should be reset to its initial value so that the language can be reloaded later in the activateBuffer() function.
 		}
 	}
 
@@ -6451,21 +6423,21 @@ void Notepad_plus::drawTabbarColoursFromStylerArray()
 {
 	Style *stActText = getStyleFromName(TABBAR_ACTIVETEXT);
 	if (stActText && static_cast<long>(stActText->_fgColor) != -1)
-		TabBarPlus::setColour(stActText->_fgColor, TabBarPlus::activeText, &_mainDocTab);
+		TabBarPlus::setColour(stActText->_fgColor, TabBarPlus::activeText, &(_mainDocTab.dpiManager()));
 
 	Style *stActfocusTop = getStyleFromName(TABBAR_ACTIVEFOCUSEDINDCATOR);
 	if (stActfocusTop && static_cast<long>(stActfocusTop->_fgColor) != -1)
-		TabBarPlus::setColour(stActfocusTop->_fgColor, TabBarPlus::activeFocusedTop, &_mainDocTab);
+		TabBarPlus::setColour(stActfocusTop->_fgColor, TabBarPlus::activeFocusedTop, &(_mainDocTab.dpiManager()));
 
 	Style *stActunfocusTop = getStyleFromName(TABBAR_ACTIVEUNFOCUSEDINDCATOR);
 	if (stActunfocusTop && static_cast<long>(stActunfocusTop->_fgColor) != -1)
-		TabBarPlus::setColour(stActunfocusTop->_fgColor, TabBarPlus::activeUnfocusedTop, &_mainDocTab);
+		TabBarPlus::setColour(stActunfocusTop->_fgColor, TabBarPlus::activeUnfocusedTop, &(_mainDocTab.dpiManager()));
 
 	Style *stInact = getStyleFromName(TABBAR_INACTIVETEXT);
 	if (stInact && static_cast<long>(stInact->_fgColor) != -1)
-		TabBarPlus::setColour(stInact->_fgColor, TabBarPlus::inactiveText, &_mainDocTab);
+		TabBarPlus::setColour(stInact->_fgColor, TabBarPlus::inactiveText, &(_mainDocTab.dpiManager()));
 	if (stInact && static_cast<long>(stInact->_bgColor) != -1)
-		TabBarPlus::setColour(stInact->_bgColor, TabBarPlus::inactiveBg, &_mainDocTab);
+		TabBarPlus::setColour(stInact->_bgColor, TabBarPlus::inactiveBg, &(_mainDocTab.dpiManager()));
 }
 
 void Notepad_plus::drawAutocompleteColoursFromTheme(COLORREF fgColor, COLORREF bgColor)

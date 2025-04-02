@@ -286,13 +286,13 @@ intptr_t CALLBACK PreferenceDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM
 			return TRUE;
 		}
 
-		case PREF_MSG_SETGUITOOLICONSSET:
+		case NPPM_INTERNAL_SETTOOLICONSSET: // Set icons set only option (checkbox) on general sub-dialog, the remained real operations will be done in NppDarkMode::refreshDarkMode
 		{
-			const HWND generalSubDlg = _generalSubDlg.getHSelf();
+			const HWND hGeneralSubDlg = _generalSubDlg.getHSelf();
 
-			auto checkOrUncheckBtn = [&generalSubDlg](int id, WPARAM check = BST_UNCHECKED) -> void
+			auto checkOrUncheckBtn = [&hGeneralSubDlg](int id, WPARAM check = BST_UNCHECKED) -> void
 			{
-				::SendDlgItemMessage(generalSubDlg, id, BM_SETCHECK, check, 0);
+				::SendDlgItemMessage(hGeneralSubDlg, id, BM_SETCHECK, check, 0);
 			};
 
 			const int iconState = NppDarkMode::getToolBarIconSet(static_cast<bool>(wParam));
@@ -336,45 +336,35 @@ intptr_t CALLBACK PreferenceDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM
 				case TB_LARGE:
 				{
 					checkOrUncheckBtn(IDC_RADIO_BIGICON, BST_CHECKED);
-					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TOOLBARENLARGE, 0, 0);
+					//::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TOOLBARENLARGE, 0, 0);
 					break;
 				}
 				case TB_SMALL2:
 				{
 					checkOrUncheckBtn(IDC_RADIO_SMALLICON2, BST_CHECKED);
-					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TOOLBARREDUCESET2, 0, 0);
+					//::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TOOLBARREDUCESET2, 0, 0);
 					break;
 				}
 				case TB_LARGE2:
 				{
 					checkOrUncheckBtn(IDC_RADIO_BIGICON2, BST_CHECKED);
-					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TOOLBARENLARGESET2, 0, 0);
+					//::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TOOLBARENLARGESET2, 0, 0);
 					break;
 				}
 				case TB_STANDARD:
 				{
 					checkOrUncheckBtn(IDC_RADIO_STANDARD, BST_CHECKED);
-					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TOOLBARSTANDARD, 0, 0);
+					//::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TOOLBARSTANDARD, 0, 0);
 					break;
 				}
 				//case TB_SMALL:
 				default:
 				{
 					checkOrUncheckBtn(IDC_RADIO_SMALLICON, BST_CHECKED);
-					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TOOLBARREDUCE, 0, 0);
+					//::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TOOLBARREDUCE, 0, 0);
 				}
 			}
 
-			return TRUE;
-		}
-
-		case PREF_MSG_SETGUITABBARICONS:
-		{
-			const int tabIconSet = NppDarkMode::getTabIconSet(static_cast<bool>(wParam));
-			if (tabIconSet != -1)
-			{
-				_generalSubDlg.setTabbarAlternateIcons(tabIconSet == 1);
-			}
 			return TRUE;
 		}
 
@@ -520,7 +510,6 @@ void PreferenceDlg::showDialogByName(const wchar_t *name) const
 	}
 }
 
-
 void PreferenceDlg::showDialogByIndex(size_t index) const
 {
 	size_t len = _wVector.size();
@@ -573,12 +562,12 @@ void GeneralSubDlg::setTabbarAlternateIcons(bool enable)
 intptr_t CALLBACK GeneralSubDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM)
 {
 	NppParameters& nppParam = NppParameters::getInstance();
-	
+	NppGUI& nppGUI = nppParam.getNppGUI();
+
 	switch (message)
 	{
 		case WM_INITDIALOG :
 		{
-			NppGUI & nppGUI = nppParam.getNppGUI();
 			toolBarStatusType tbStatus = nppGUI._toolBarStatus;
 			int tabBarStatus = nppGUI._tabStatus;
 			bool showTool = nppGUI._toolbarShow;
@@ -702,7 +691,6 @@ intptr_t CALLBACK GeneralSubDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM
 				case IDC_CHECK_HIDERIGHTSHORTCUTSOFMENUBAR:
 				{
 					bool isChecked = (BST_CHECKED == ::SendDlgItemMessage(_hSelf, IDC_CHECK_HIDERIGHTSHORTCUTSOFMENUBAR, BM_GETCHECK, 0, 0));
-					NppGUI& nppGUI = nppParam.getNppGUI();
 					nppGUI._hideMenuRightShortcuts = isChecked;
 					static bool isFirstShow = true;
 					if (isChecked)
@@ -725,7 +713,12 @@ intptr_t CALLBACK GeneralSubDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM
 
 				case IDC_CHECK_TAB_HIDE :
 				{
-					bool toBeHidden = (BST_CHECKED == ::SendMessage(::GetDlgItem(_hSelf, IDC_CHECK_TAB_HIDE), BM_GETCHECK, 0, 0));
+					bool toBeHidden = isCheckedOrNot(IDC_CHECK_TAB_HIDE);
+					if (toBeHidden)
+						nppGUI._tabStatus |= TAB_HIDE;
+					else
+						nppGUI._tabStatus &= ~TAB_HIDE;
+
 					::EnableWindow(::GetDlgItem(_hSelf, IDC_CHECK_TAB_MULTILINE), !toBeHidden);
 					::EnableWindow(::GetDlgItem(_hSelf, IDC_CHECK_TAB_VERTICAL), !toBeHidden);
 					::EnableWindow(::GetDlgItem(_hSelf, IDC_CHECK_REDUCE), !toBeHidden);
@@ -734,34 +727,59 @@ intptr_t CALLBACK GeneralSubDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM
 					::EnableWindow(::GetDlgItem(_hSelf, IDC_CHECK_DRAWINACTIVE), !toBeHidden);
 					::EnableWindow(::GetDlgItem(_hSelf, IDC_CHECK_ENABLETABCLOSE), !toBeHidden);
 					::EnableWindow(::GetDlgItem(_hSelf, IDC_CHECK_ENABLETABPIN), !toBeHidden);
+					::EnableWindow(::GetDlgItem(_hSelf, IDC_CHECK_INACTTABDRAWBUTTON), !toBeHidden);
 					::EnableWindow(::GetDlgItem(_hSelf, IDC_CHECK_DBCLICK2CLOSE), !toBeHidden);
 					::EnableWindow(::GetDlgItem(_hSelf, IDC_CHECK_TAB_LAST_EXIT), !toBeHidden);
 					::EnableWindow(::GetDlgItem(_hSelf, IDC_CHECK_TAB_ALTICONS), !toBeHidden);
 
-					::SendMessage(::GetParent(_hParent), NPPM_HIDETABBAR, 0, toBeHidden);
+					::SendMessage(::GetParent(_hParent), WM_SIZE, 0, 0);
+
 					return TRUE;
 				}
 				
 				case  IDC_CHECK_TAB_VERTICAL:
+				{
+					const bool isChecked = isCheckedOrNot(IDC_CHECK_TAB_VERTICAL);
+					if (isChecked)
+						nppGUI._tabStatus |= TAB_VERTICAL;
+					else
+						nppGUI._tabStatus &= ~TAB_VERTICAL;
+
 					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_VERTICALTABBAR, 0, 0);
 					return TRUE;
+				}
 
-				case IDC_CHECK_TAB_MULTILINE :
+				case IDC_CHECK_TAB_MULTILINE:
+				{
+
+					const bool isChecked = isCheckedOrNot(IDC_CHECK_TAB_MULTILINE);
+					if (isChecked)
+						nppGUI._tabStatus |= TAB_MULTILINE;
+					else
+						nppGUI._tabStatus &= ~TAB_MULTILINE;
+
 					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_MULTILINETABBAR, 0, 0);
 					return TRUE;
+				}
 
 				case IDC_CHECK_TAB_LAST_EXIT:
 				{
-					NppGUI & nppGUI = nppParam.getNppGUI();
-					nppGUI._tabStatus ^= TAB_QUITONEMPTY;
+					const bool isChecked = isCheckedOrNot(IDC_CHECK_TAB_LAST_EXIT);
+					if (isChecked)
+						nppGUI._tabStatus |= TAB_QUITONEMPTY;
+					else
+						nppGUI._tabStatus &= ~TAB_QUITONEMPTY;
 				}
 				return TRUE;
 
 				case IDC_CHECK_TAB_ALTICONS:
 				{
-					NppGUI& nppGUI = nppParam.getNppGUI();
-					nppGUI._tabStatus ^= TAB_ALTICONS;
 					const bool isChecked = isCheckedOrNot(IDC_CHECK_TAB_ALTICONS);
+					if (isChecked)
+						nppGUI._tabStatus |= TAB_ALTICONS;	
+					else
+						nppGUI._tabStatus &= ~TAB_ALTICONS;
+
 					const bool isBtnCmd = true;
 					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_CHANGETABBARICONSET, static_cast<WPARAM>(isBtnCmd), isChecked ? 1 : (nppGUI._darkmode._isEnabled ? 2 : 0));
 					NppDarkMode::setTabIconSet(isChecked, NppDarkMode::isEnabled());
@@ -770,25 +788,71 @@ intptr_t CALLBACK GeneralSubDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM
 
 				case IDC_CHECK_REDUCE:
 				{
+					const bool isChecked = isCheckedOrNot(IDC_CHECK_REDUCE);
+					if (isChecked)
+						nppGUI._tabStatus |= TAB_REDUCE;
+					else
+						nppGUI._tabStatus &= ~TAB_REDUCE;
+
 					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_REDUCETABBAR, 0, 0);
 					return TRUE;
 				}
 
-				case IDC_CHECK_LOCK :
-					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_LOCKTABBAR, 0, 0);
+				case IDC_CHECK_LOCK:
+				{
+					bool islocked = isCheckedOrNot(IDC_CHECK_LOCK);
+					if (islocked)
+						nppGUI._tabStatus &= ~TAB_DRAGNDROP;
+					else
+						nppGUI._tabStatus |= TAB_DRAGNDROP;
+
 					return TRUE;
-					
-				case IDC_CHECK_ORANGE :
+				}
+
+				case IDC_CHECK_ORANGE:
+				{
+					const bool isChecked = isCheckedOrNot(IDC_CHECK_ORANGE);
+					if (isChecked)
+						nppGUI._tabStatus |= TAB_DRAWTOPBAR;
+					else
+						nppGUI._tabStatus &= ~TAB_DRAWTOPBAR;
+
 					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_DRAWTABTOPBAR, 0, 0);
 					return TRUE;
+				}
 					
-				case IDC_CHECK_DRAWINACTIVE :
+				case IDC_CHECK_DRAWINACTIVE:
+				{
+					const bool isChecked = isCheckedOrNot(IDC_CHECK_DRAWINACTIVE);
+					if (isChecked)
+						nppGUI._tabStatus |= TAB_DRAWINACTIVETAB;
+					else
+						nppGUI._tabStatus &= ~TAB_DRAWINACTIVETAB;
+
 					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_DRAWINACIVETAB, 0, 0);
 					return TRUE;
-					
+				}
+
 				case IDC_CHECK_ENABLETABCLOSE:
 				case IDC_CHECK_ENABLETABPIN:
 				{
+					if (wParam == IDC_CHECK_ENABLETABCLOSE)
+					{
+						const bool isChecked = isCheckedOrNot(IDC_CHECK_ENABLETABCLOSE);
+						if (isChecked)
+							nppGUI._tabStatus |= TAB_CLOSEBUTTON;
+						else
+							nppGUI._tabStatus &= ~TAB_CLOSEBUTTON;
+					}
+					else
+					{
+						const bool isChecked = isCheckedOrNot(IDC_CHECK_ENABLETABPIN);
+						if (isChecked)
+							nppGUI._tabStatus |= TAB_PINBUTTON;
+						else
+							nppGUI._tabStatus &= ~TAB_PINBUTTON;
+					}
+
 					::SendMessage(::GetParent(_hParent), wParam == IDC_CHECK_ENABLETABCLOSE ? NPPM_INTERNAL_DRAWTABBARCLOSEBUTTON : NPPM_INTERNAL_DRAWTABBARPINBUTTON, 0, 0);
 
 					bool showCloseButton = isCheckedOrNot(IDC_CHECK_ENABLETABCLOSE);
@@ -796,7 +860,7 @@ intptr_t CALLBACK GeneralSubDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM
 
 					if (!(showCloseButton || enablePinButton))
 					{
-						nppParam.getNppGUI()._tabStatus &= ~TAB_INACTIVETABSHOWBUTTON;
+						nppGUI._tabStatus &= ~TAB_INACTIVETABSHOWBUTTON;
 						::SendDlgItemMessage(_hSelf, IDC_CHECK_INACTTABDRAWBUTTON, BM_SETCHECK, FALSE, 0);
 						::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_DRAWINACTIVETABBARBUTTON, 0, 0);
 					}
@@ -808,19 +872,24 @@ intptr_t CALLBACK GeneralSubDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM
 				case IDC_CHECK_INACTTABDRAWBUTTON:
 				{
 					const bool isChecked = isCheckedOrNot(IDC_CHECK_INACTTABDRAWBUTTON);
-					NppGUI& nppgui = nppParam.getNppGUI();
 					if (isChecked)
-						nppgui._tabStatus |= TAB_INACTIVETABSHOWBUTTON;
+						nppGUI._tabStatus |= TAB_INACTIVETABSHOWBUTTON;
 					else
-						nppgui._tabStatus &= ~TAB_INACTIVETABSHOWBUTTON;
+						nppGUI._tabStatus &= ~TAB_INACTIVETABSHOWBUTTON;
 
 					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_DRAWINACTIVETABBARBUTTON, 0, 0);
 					return TRUE;
 				}
 
-				case IDC_CHECK_DBCLICK2CLOSE :
-					::SendMessage(::GetParent(_hParent), NPPM_INTERNAL_TABDBCLK2CLOSE, 0, 0);
+				case IDC_CHECK_DBCLICK2CLOSE:
+				{
+					const bool isChecked = isCheckedOrNot(IDC_CHECK_DBCLICK2CLOSE);
+					if (isChecked)
+						nppGUI._tabStatus |= TAB_DBCLK2CLOSE;
+					else
+						nppGUI._tabStatus &= ~TAB_DBCLK2CLOSE;
 					return TRUE;
+				}
 
 				case IDC_CHECK_HIDE :
 				{
@@ -1838,8 +1907,7 @@ intptr_t CALLBACK DarkModeSubDlg::run_dlgProc(UINT message, WPARAM wParam, LPARA
 					doEnableCustomizedColorCtrls = enableDarkMode && nppGUI._darkmode._colorTone == NppDarkMode::customizedTone;
 					enableCustomizedColorCtrls(doEnableCustomizedColorCtrls);
 
-					::SendMessage(_hParent, PREF_MSG_SETGUITOOLICONSSET, static_cast<WPARAM>(enableDarkMode), 0);
-					::SendMessage(_hParent, PREF_MSG_SETGUITABBARICONS, static_cast<WPARAM>(enableDarkMode), 0);
+					::SendMessage(_hParent, NPPM_INTERNAL_SETTOOLICONSSET, static_cast<WPARAM>(enableDarkMode), 0); // Set icons set only option (checkbox) on general sub-dialog, the remained real operations will be done in NppDarkMode::refreshDarkMode
 
 					changed = true;
 				}
@@ -2491,7 +2559,7 @@ intptr_t CALLBACK MiscSubDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM)
 			::SendDlgItemMessage(_hSelf, IDC_COMBO_SC_TECHNOLOGY_CHOICE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DirectWrite (default)"));
 			::SendDlgItemMessage(_hSelf, IDC_COMBO_SC_TECHNOLOGY_CHOICE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DirectWrite (retain frames)"));
 			::SendDlgItemMessage(_hSelf, IDC_COMBO_SC_TECHNOLOGY_CHOICE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DirectWrite (draw to GDI DC)"));
-			//::SendDlgItemMessage(_hSelf, IDC_COMBO_SC_TECHNOLOGY_CHOICE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DirectWrite (DirectX 11)"));
+			::SendDlgItemMessage(_hSelf, IDC_COMBO_SC_TECHNOLOGY_CHOICE, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"DirectWrite (DirectX 11)"));
 
 			if ((nppGUI._writeTechnologyEngine < 0) || (nppGUI._writeTechnologyEngine > directWriteTechnologyUnavailable))
 				nppGUI._writeTechnologyEngine = directWriteTechnology;
@@ -3900,6 +3968,8 @@ intptr_t CALLBACK LanguageSubDlg::run_dlgProc(UINT message, WPARAM wParam, LPARA
 				case IDC_CHECK_BACKSLASHISESCAPECHARACTERFORSQL:
 				{
 					nppGUI._backSlashIsEscapeCharacterForSql = isCheckedOrNot(IDC_CHECK_BACKSLASHISESCAPECHARACTERFORSQL);
+					HWND hwndNPP = GetParent(_hParent);
+					::SendMessage(hwndNPP, NPPM_INTERNAL_SQLBACKSLASHESCAPE, 0, reinterpret_cast<LPARAM>(hwndNPP));
 					return TRUE;
 				}
 
