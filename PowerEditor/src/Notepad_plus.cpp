@@ -149,16 +149,11 @@ Notepad_plus::Notepad_plus()
 
 	nppParam.setNativeLangSpeaker(&_nativeLangSpeaker);
 
-	TiXmlDocument *toolIconsDocRoot = nppParam.getCustomizedToolIcons();
 	TiXmlDocument *toolButtonsDocRoot = nppParam.getCustomizedToolButtons();
-
-	if (toolIconsDocRoot)
-	{
-		_toolBar.initTheme(toolIconsDocRoot);
-	}
 
 	if (toolButtonsDocRoot)
 	{
+		_toolBar.initTheme(toolButtonsDocRoot);
 		_toolBar.initHideButtonsConf(toolButtonsDocRoot, toolBarIcons, sizeof(toolBarIcons) / sizeof(ToolBarButtonUnit));
 	}
 
@@ -405,8 +400,13 @@ LRESULT Notepad_plus::init(HWND hwnd)
 	TabCtrl_SetItemSize(_subDocTab.getHSelf(), tabDpiDynamicalWidth, tabDpiDynamicalHeight);
 
 	_mainDocTab.display();
+
+	if (nppGUI._tabStatus & TAB_VERTICAL)
+		TabBarPlus::doVertical();
+
 	TabBarPlus::triggerOwnerDrawTabbar(&(_mainDocTab.dpiManager()));
 	drawTabbarColoursFromStylerArray();
+
 
 	//
 	// Initialize the default foreground & background color
@@ -688,13 +688,9 @@ LRESULT Notepad_plus::init(HWND hwnd)
 
 
 	//-- Tool Bar Section --//
-	
-	const int toolbarState = NppDarkMode::getToolBarIconSet(NppDarkMode::isEnabled());
-	if (toolbarState != -1)
-	{
-		nppGUI._toolBarStatus = static_cast<toolBarStatusType>(toolbarState);
-	}
-	toolBarStatusType tbStatus = nppGUI._toolBarStatus;
+
+	nppGUI._tbIconInfo = NppDarkMode::getToolbarIconInfo();
+	toolBarStatusType tbStatus = nppGUI._tbIconInfo._tbIconSet;
 	willBeShown = nppGUI._toolbarShow;
 
 	// To notify plugins that toolbar icons can be registered
@@ -894,7 +890,7 @@ bool Notepad_plus::saveGUIParams()
 	NppParameters& nppParams = NppParameters::getInstance();
 	NppGUI & nppGUI = nppParams.getNppGUI();
 	nppGUI._toolbarShow = _rebarTop.getIDVisible(REBAR_BAR_TOOLBAR);
-	nppGUI._toolBarStatus = _toolBar.getState();
+	nppGUI._tbIconInfo._tbIconSet = _toolBar.getState();
 
 	nppGUI._splitterPos = _subSplitter.isVertical()?POS_VERTICAL:POS_HORIZOTAL;
 	UserDefineDialog *udd = _pEditView->getUserDefineDlg();
@@ -4326,15 +4322,20 @@ void Notepad_plus::updateStatusBar()
 	// these sections of status bar NOT updated by this function:
 	// STATUSBAR_DOC_TYPE , STATUSBAR_EOF_FORMAT , STATUSBAR_UNICODE_TYPE
 
-	wchar_t strDocLen[256];
 	size_t docLen = _pEditView->getCurrentDocLen();
 	intptr_t nbLine = _pEditView->execute(SCI_GETLINECOUNT);
-	wsprintf(strDocLen, L"length : %s    lines : %s",
-		commafyInt(docLen).c_str(),
-		commafyInt(nbLine).c_str());
-	_statusBar.setText(strDocLen, STATUSBAR_DOC_SIZE);
 
-	wchar_t strSel[64];
+	wstring docLenStr = commafyInt(docLen);
+	wstring nbLineStr = commafyInt(nbLine);
+
+	NativeLangSpeaker* pNativeSpeaker = (NppParameters::getInstance()).getNativeLangSpeaker();
+	wstring statusbarLengthLinesStr = pNativeSpeaker->getLocalizedStrFromID("statusbar-length-lines", L"length: $STR_REPLACE1$    lines: $STR_REPLACE2$");
+	statusbarLengthLinesStr = stringReplace(statusbarLengthLinesStr, L"$STR_REPLACE1$", docLenStr);
+	statusbarLengthLinesStr = stringReplace(statusbarLengthLinesStr, L"$STR_REPLACE2$", nbLineStr);
+
+	_statusBar.setText(statusbarLengthLinesStr.c_str(), STATUSBAR_DOC_SIZE);
+
+	wstring statusbarSelStr;
 
 	size_t nbSelections = _pEditView->execute(SCI_GETSELECTIONS);
 	if (nbSelections == 1)
@@ -4342,14 +4343,14 @@ void Notepad_plus::updateStatusBar()
 		if (_pEditView->execute(SCI_GETSELECTIONEMPTY))
 		{
 			size_t currPos = _pEditView->execute(SCI_GETCURRENTPOS);
-			wsprintf(strSel, L"Pos : %s", commafyInt(currPos + 1).c_str());
+			statusbarSelStr = pNativeSpeaker->getLocalizedStrFromID("statusbar-Pos", L"Pos: ");
+			statusbarSelStr += commafyInt(currPos + 1);
 		}
 		else
 		{
 			const std::pair<size_t, size_t> oneSelCharsAndLines = _pEditView->getSelectedCharsAndLinesCount();
-			wsprintf(strSel, L"Sel : %s | %s",
-				commafyInt(oneSelCharsAndLines.first).c_str(),
-				commafyInt(oneSelCharsAndLines.second).c_str());
+			statusbarSelStr = pNativeSpeaker->getLocalizedStrFromID("statusbar-Sel", L"Sel: ");
+			statusbarSelStr += commafyInt(oneSelCharsAndLines.first) + L" | " + commafyInt(oneSelCharsAndLines.second);
 		}
 	}
 	else if (_pEditView->execute(SCI_SELECTIONISRECTANGLE))
@@ -4382,33 +4383,35 @@ void Notepad_plus::updateStatusBar()
 			}
 		}
 
-		wsprintf(strSel, L"Sel : %sx%s %s %s",
-			commafyInt(nbSelections).c_str(),  // lines (rows) in rectangular selection
-			commafyInt(maxLineCharCount).c_str(),  // show maximum width for columns
-			sameCharCountOnEveryLine ? L"=" : L"->",
-			commafyInt(rectSelCharsAndLines.first).c_str());
+		wstring nbSelectionsStr = commafyInt(nbSelections);  // lines (rows) in rectangular selection
+		wstring	maxLineCharCountStr = commafyInt(maxLineCharCount);  // show maximum width for columns
+		wstring opStr = sameCharCountOnEveryLine ? L" = " : L" -> ";
+		wstring rectSelCharsStr = commafyInt(rectSelCharsAndLines.first);
+
+		statusbarSelStr = pNativeSpeaker->getLocalizedStrFromID("statusbar-Sel", L"Sel: ");
+		statusbarSelStr += nbSelectionsStr + L"x" + maxLineCharCountStr + opStr + rectSelCharsStr;
 	}
 	else  // multiple stream selections
 	{
 		const int maxSelsToProcessLineCount = 99;  // limit the number of selections to process, for performance reasons
 		const std::pair<size_t, size_t> multipleSelCharsAndLines = _pEditView->getSelectedCharsAndLinesCount(maxSelsToProcessLineCount);
 
-		wsprintf(strSel, L"Sel %s : %s | %s",
-			commafyInt(nbSelections).c_str(),
-			commafyInt(multipleSelCharsAndLines.first).c_str(),
-			nbSelections <= maxSelsToProcessLineCount ?
-				commafyInt(multipleSelCharsAndLines.second).c_str() :
-				L"...");  // show ellipsis for line count if too many selections are active
+		wstring nbSelectionsStr = commafyInt(nbSelections);
+		wstring multipleSelChars = commafyInt(multipleSelCharsAndLines.first);
+		wstring multipleSelLines = (nbSelections <= maxSelsToProcessLineCount) ? commafyInt(multipleSelCharsAndLines.second) :	L"...";  // show ellipsis for line count if too many selections are active
+
+		statusbarSelStr = pNativeSpeaker->getLocalizedStrFromID("statusbar-Sel-number", L"Sel");
+		statusbarSelStr += L" " + nbSelectionsStr + L" : " + multipleSelChars + L" | " + multipleSelLines;
 	}
 
-	wchar_t strLnColSel[128];
-	intptr_t curLN = _pEditView->getCurrentLineNumber();
-	intptr_t curCN = _pEditView->getCurrentColumnNumber();
-	wsprintf(strLnColSel, L"Ln : %s    Col : %s    %s",
-		commafyInt(curLN + 1).c_str(),
-		commafyInt(curCN + 1).c_str(),
-		strSel);
-	_statusBar.setText(strLnColSel, STATUSBAR_CUR_POS);
+	wstring lnStr = commafyInt(_pEditView->getCurrentLineNumber() + 1);
+	wstring colStr = commafyInt(_pEditView->getCurrentColumnNumber() + 1);
+	wstring statusbarLnColStr = pNativeSpeaker->getLocalizedStrFromID("statusbar-Ln-Col", L"Ln: $STR_REPLACE1$    Col: $STR_REPLACE2$");
+	statusbarLnColStr = stringReplace(statusbarLnColStr, L"$STR_REPLACE1$", lnStr);
+	statusbarLnColStr = stringReplace(statusbarLnColStr, L"$STR_REPLACE2$", colStr);
+	wstring statusbarLnColSelStr = statusbarLnColStr + L"    " + statusbarSelStr;
+
+	_statusBar.setText(statusbarLnColSelStr.c_str(), STATUSBAR_CUR_POS);
 
 	_statusBar.setText(_pEditView->execute(SCI_GETOVERTYPE) ? L"OVR" : L"INS", STATUSBAR_TYPING_MODE);
 	
@@ -7284,11 +7287,11 @@ void Notepad_plus::launchClipboardHistoryPanel()
 		// define the default docking behaviour
 		data.uMask = DWS_DF_CONT_RIGHT | DWS_ICONTAB | DWS_USEOWNDARKMODE;
 
-		int icoID = IDR_CLIPBOARDPANEL_ICO;
-		if (NppDarkMode::isEnabled())
+		int icoID = IDR_CLIPBOARDPANEL_ICO2;
+		if (nppParams.getNppGUI()._tbIconInfo._tbIconSet == TB_STANDARD)
+			icoID = IDR_CLIPBOARDPANEL_ICO;
+		else if (NppDarkMode::isEnabled())
 			icoID = IDR_CLIPBOARDPANEL_ICO_DM;
-		else if (nppParams.getNppGUI()._toolBarStatus != TB_STANDARD)
-			icoID = IDR_CLIPBOARDPANEL_ICO2;
 
 		const int iconSize = DPIManagerV2::scale(g_dockingContTabIconSize, _pClipboardHistoryPanel->getHSelf());
 		DPIManagerV2::loadIcon(_pPublicInterface->getHinst(), MAKEINTRESOURCE(icoID), iconSize, iconSize, &data.hIconTab, LR_LOADMAP3DCOLORS | LR_LOADTRANSPARENT);
@@ -7348,11 +7351,11 @@ void Notepad_plus::launchDocumentListPanel(bool changeFromBtnCmd)
 		// define the default docking behaviour
 		data.uMask = DWS_DF_CONT_LEFT | DWS_ICONTAB | DWS_USEOWNDARKMODE;
 
-		int icoID = IDR_DOCLIST_ICO;
-		if (NppDarkMode::isEnabled())
+		int icoID = IDR_DOCLIST_ICO2;
+		if (nppParams.getNppGUI()._tbIconInfo._tbIconSet == TB_STANDARD)
+			icoID = IDR_DOCLIST_ICO;
+		else if (NppDarkMode::isEnabled())
 			icoID = IDR_DOCLIST_ICO_DM;
-		else if (nppParams.getNppGUI()._toolBarStatus != TB_STANDARD)
-			icoID = IDR_DOCLIST_ICO2;
 
 		const int iconSize = DPIManagerV2::scale(g_dockingContTabIconSize, _pDocumentListPanel->getHSelf());
 		DPIManagerV2::loadIcon(_pPublicInterface->getHinst(), MAKEINTRESOURCE(icoID), iconSize, iconSize, &data.hIconTab, LR_LOADMAP3DCOLORS | LR_LOADTRANSPARENT);
@@ -7436,11 +7439,11 @@ void Notepad_plus::launchAnsiCharPanel()
 		// define the default docking behaviour
 		data.uMask = DWS_DF_CONT_RIGHT | DWS_ICONTAB | DWS_USEOWNDARKMODE;
 
-		int icoID = IDR_ASCIIPANEL_ICO;
-		if (NppDarkMode::isEnabled())
+		int icoID = IDR_ASCIIPANEL_ICO2;
+		if (nppParams.getNppGUI()._tbIconInfo._tbIconSet == TB_STANDARD)
+			icoID = IDR_ASCIIPANEL_ICO;
+		else if (NppDarkMode::isEnabled())
 			icoID = IDR_ASCIIPANEL_ICO_DM;
-		else if (nppParams.getNppGUI()._toolBarStatus != TB_STANDARD)
-			icoID = IDR_ASCIIPANEL_ICO2;
 
 		const int iconSize = DPIManagerV2::scale(g_dockingContTabIconSize, _pAnsiCharPanel->getHSelf());
 		DPIManagerV2::loadIcon(_pPublicInterface->getHinst(), MAKEINTRESOURCE(icoID), iconSize, iconSize, &data.hIconTab, LR_LOADMAP3DCOLORS | LR_LOADTRANSPARENT);
@@ -7488,11 +7491,11 @@ void Notepad_plus::launchFileBrowser(const vector<wstring> & folders, const wstr
 		// define the default docking behaviour
 		data.uMask = DWS_DF_CONT_LEFT | DWS_ICONTAB | DWS_USEOWNDARKMODE;
 		
-		int icoID = IDR_FILEBROWSER_ICO;
-		if (NppDarkMode::isEnabled())
+		int icoID = IDR_FILEBROWSER_ICO2;
+		if (nppParams.getNppGUI()._tbIconInfo._tbIconSet == TB_STANDARD)
+			icoID = IDR_FILEBROWSER_ICO;
+		else if (NppDarkMode::isEnabled())
 			icoID = IDR_FILEBROWSER_ICO_DM;
-		else if (nppParams.getNppGUI()._toolBarStatus != TB_STANDARD)
-			icoID = IDR_FILEBROWSER_ICO2;
 
 		const int iconSize = DPIManagerV2::scale(g_dockingContTabIconSize, _pFileBrowser->getHSelf());
 		DPIManagerV2::loadIcon(_pPublicInterface->getHinst(), MAKEINTRESOURCE(icoID), iconSize, iconSize, &data.hIconTab, LR_LOADMAP3DCOLORS | LR_LOADTRANSPARENT);
@@ -7598,11 +7601,11 @@ void Notepad_plus::launchProjectPanel(int cmdID, ProjectPanel ** pProjPanel, int
 		// define the default docking behaviour
 		data.uMask = DWS_DF_CONT_LEFT | DWS_ICONTAB | DWS_USEOWNDARKMODE;
 
-		int icoID = IDR_PROJECTPANEL_ICO;
-		if (NppDarkMode::isEnabled())
+		int icoID = IDR_PROJECTPANEL_ICO2;
+		if (nppParam.getNppGUI()._tbIconInfo._tbIconSet == TB_STANDARD)
+			icoID = IDR_PROJECTPANEL_ICO;
+		else if (NppDarkMode::isEnabled())
 			icoID = IDR_PROJECTPANEL_ICO_DM;
-		else if (nppParam.getNppGUI()._toolBarStatus != TB_STANDARD)
-			icoID = IDR_PROJECTPANEL_ICO2;
 
 		const int iconSize = DPIManagerV2::scale(g_dockingContTabIconSize, (*pProjPanel)->getHSelf());
 		DPIManagerV2::loadIcon(_pPublicInterface->getHinst(), MAKEINTRESOURCE(icoID), iconSize, iconSize, &data.hIconTab, LR_LOADMAP3DCOLORS | LR_LOADTRANSPARENT);
@@ -7664,11 +7667,11 @@ void Notepad_plus::launchDocMap()
 		// define the default docking behaviour
 		data.uMask = DWS_DF_CONT_RIGHT | DWS_ICONTAB | DWS_USEOWNDARKMODE;
 
-		int icoID = IDR_DOCMAP_ICO;
-		if (NppDarkMode::isEnabled())
+		int icoID = IDR_DOCMAP_ICO2;
+		if (nppParam.getNppGUI()._tbIconInfo._tbIconSet == TB_STANDARD)
+			icoID = IDR_DOCMAP_ICO;
+		else if (NppDarkMode::isEnabled())
 			icoID = IDR_DOCMAP_ICO_DM;
-		else if (nppParam.getNppGUI()._toolBarStatus != TB_STANDARD)
-			icoID = IDR_DOCMAP_ICO2;
 
 		const int iconSize = DPIManagerV2::scale(g_dockingContTabIconSize, _pDocMap->getHSelf());
 		DPIManagerV2::loadIcon(_pPublicInterface->getHinst(), MAKEINTRESOURCE(icoID), iconSize, iconSize, &data.hIconTab, LR_LOADMAP3DCOLORS | LR_LOADTRANSPARENT);
@@ -7715,11 +7718,11 @@ void Notepad_plus::launchFunctionList()
 		
 		NppParameters& nppParam = NppParameters::getInstance();
 
-		int icoID = IDR_FUNC_LIST_ICO;
-		if (NppDarkMode::isEnabled())
+		int icoID = IDR_FUNC_LIST_ICO2;
+		if (nppParam.getNppGUI()._tbIconInfo._tbIconSet == TB_STANDARD)
+			icoID = IDR_FUNC_LIST_ICO;
+		else if (NppDarkMode::isEnabled())
 			icoID = IDR_FUNC_LIST_ICO_DM;
-		else if (nppParam.getNppGUI()._toolBarStatus != TB_STANDARD)
-			icoID = IDR_FUNC_LIST_ICO2;
 
 		const int iconSize = DPIManagerV2::scale(g_dockingContTabIconSize, _pFuncList->getHSelf());
 		DPIManagerV2::loadIcon(_pPublicInterface->getHinst(), MAKEINTRESOURCE(icoID), iconSize, iconSize, &data.hIconTab, LR_LOADMAP3DCOLORS | LR_LOADTRANSPARENT);
@@ -8503,7 +8506,7 @@ void Notepad_plus::refreshDarkMode(bool resetStyle)
 		const int tabIconSet = NppDarkMode::getTabIconSet(NppDarkMode::isEnabled());
 		if (tabIconSet != -1)
 		{
-			_preference._generalSubDlg.setTabbarAlternateIcons(tabIconSet == 1);
+			_preference._tabbarSubDlg.setTabbarAlternateIcons(tabIconSet == 1);
 			::SendMessage(_pPublicInterface->getHSelf(), NPPM_INTERNAL_CHANGETABBARICONSET, static_cast<WPARAM>(false), tabIconSet);
 		}
 		else
@@ -8515,9 +8518,10 @@ void Notepad_plus::refreshDarkMode(bool resetStyle)
 			}
 		}
 
-		const int iconState = NppDarkMode::getToolBarIconSet(NppDarkMode::isEnabled());
-		toolBarStatusType state = (iconState == -1) ? _toolBar.getState() : static_cast<toolBarStatusType>(iconState);
-		switch (state)
+		auto& nppGUITbInfo = nppParams.getNppGUI()._tbIconInfo;
+		nppGUITbInfo = NppDarkMode::getToolbarIconInfo();
+
+		switch (nppGUITbInfo._tbIconSet)
 		{
 			case TB_SMALL:
 				_toolBar.reduce();
